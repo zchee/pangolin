@@ -3,6 +3,7 @@ package main
 import (
     "os/exec"
     "strings"
+    "strconv"
 //    "regexp"
 //    "fmt"
     "github.com/ant0ine/go-json-rest/rest"
@@ -29,13 +30,6 @@ func main() {
         rest.Post("/api/instances", InstanceStart),
         rest.Get("/api/instances", InstanceList),
         rest.Delete("/api/instances", InstanceDestroy),
-
-/*
-        rest.Get("/countries", GetAllCountries),
-        rest.Post("/countries", PostCountry),
-        rest.Get("/countries/:code", GetCountry),
-        rest.Delete("/countries/:code", DeleteCountry),
-*/
 
     )
     if err != nil {
@@ -119,6 +113,111 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 
 }
 
+func cloneAmi(ami string, instanceid string) {
+    cmd := exec.Command("echo", "zfs", "clone", zpool + "/" + ami + "@0", zpool + "/" + instanceid)
+    stdout, err := cmd.Output()
+    if err != nil {
+        panic(err)
+    }
+    print(string(stdout))
+}
+
+func setupTap(tap string) {
+    lock.Lock()
+    cmd := exec.Command("echo", "ifconfig", tap, "create")
+    stdout, err := cmd.Output()
+    lock.Unlock()
+
+    if err != nil {
+        println(err.Error())
+        return
+    }
+
+    print(string(stdout))
+}
+
+func addTapToBridge(tap string, bridge string) {
+    lock.Lock()
+    cmd := exec.Command("echo", "ifconfig", bridge, "addm", tap)
+    stdout, err := cmd.Output()
+    lock.Unlock()
+
+    if err != nil {
+        println(err.Error())
+        return
+    }
+
+    print(string(stdout))
+}
+
+func bridgeUp(bridge string) {
+    lock.Lock()
+    cmd := exec.Command("echo", "ifconfig", bridge, "up")
+    stdout, err := cmd.Output()
+    lock.Unlock()
+
+    if err != nil {
+        println(err.Error())
+        return
+    }
+
+    print(string(stdout))
+}
+
+func bhyveLoad(console string, memory int, instanceid string) {
+    lock.Lock()
+    cmd := exec.Command("echo", "bhyveload", "-c", console, "-m", strconv.Itoa(memory) + "M", "-d", "/dev/zvol/" + zpool + "/" + instanceid, instanceid)
+    stdout, err := cmd.Output()
+    lock.Unlock()
+
+    if err != nil {
+        println(err.Error())
+        return
+    }
+
+    print(string(stdout))
+}
+
+func bhyveDestroy (instanceid string) {
+    lock.Lock()
+    cmd := exec.Command("echo", "bhyvectl", "--destroy", "--vm", instanceid)
+    stdout, err := cmd.Output()
+    lock.Unlock()
+
+    if err != nil {
+        println(err.Error())
+        return
+    }
+    print(string(stdout))
+}
+
+func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
+    pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
+    lock.Lock()
+    cmd := exec.Command("echo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net," + tap, "-s", "3:0,virtio-blk,/dev/zvol/" + zpool + "/" + instanceid, "-lcom1," + console, instanceid)
+    stdout, err := cmd.Output()
+    lock.Unlock()
+
+    if err != nil {
+        println(err.Error())
+        return
+    }
+    print(string(stdout))
+}
+
+func findTap() string {
+    // TODO find new tap interface
+    // TODO bring tap up? net.link.tap.up_on_open=1 should ensure it, but
+    // paranoia, perhaps should have setupTap check state of
+    // net.link.tap.up_on_open or do it at startup after reading config
+    return "tap1"
+}
+
+func findBridge() string {
+    // TODO create separate bridge for each instance to separate instances
+    return "bridge0"
+}
+
 // takes an image id and creates a running instance from it
 func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
     // get ami
@@ -138,97 +237,20 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
     u2 := u1.String()
     u2 = "i-" + u2[0:8]
 
-    cmd := exec.Command("echo", "zfs", "clone", zpool + "/" + ami.Ami + "@0", zpool + "/" + u2)
-    stdout, err := cmd.Output()
-    if err != nil {
-        panic(err)
-    }
-    print(string(stdout))
+    cloneAmi(ami.Ami, u2)
 
     // create network interface and bring up
-
-    // create tap interface
-
-    // TODO find new tap interface
-
-    lock.Lock()
-    cmd = exec.Command("echo", "ifconfig", "tap1", "create")
-    stdout, err = cmd.Output()
-    lock.Unlock()
-
-    if err != nil {
-        println(err.Error())
-        return
-    }
-
-    print(string(stdout))
-
-    // add tap interface to bridge 
-    // TODO create separate bridge for each instance to separate instances
-
-    lock.Lock()
-    cmd = exec.Command("echo", "ifconfig", "bridge0", "addm", "tap1")
-    stdout, err = cmd.Output()
-    lock.Unlock()
-
-    if err != nil {
-        println(err.Error())
-        return
-    }
-
-    print(string(stdout))
-
-    lock.Lock()
-    cmd = exec.Command("echo", "ifconfig", "bridge0", "up")
-    stdout, err = cmd.Output()
-    lock.Unlock()
-
-    if err != nil {
-        println(err.Error())
-        return
-    }
-
-    print(string(stdout))
+    tap := findTap()
+    bridge := findBridge()
+    setupTap(tap)
+    addTapToBridge(tap, bridge)
+    bridgeUp(bridge)
 
     // start the instance
-    // # sh /usr/share/examples/bhyve/vmrun.sh -c 4 -m 1024M -t tap0 -d guest.img -i -I FreeBSD-10.0-RELEASE-amd64-bootonly.iso guestname
-    // TODO destroy first: bhyvectl --destroy --vm bhyve01
-
-    // /usr/sbin/bhyveload -c /dev/nmdm0A -m 512M -d /dev/zvol/boxy/i-7fa1e5db i-7fa1e5db
-
-    lock.Lock()
-    cmd = exec.Command("echo", "bhyveload", "-c", "/dev/nmdm0A", "-m", "512M", "-d", "/dev/zvol/" + zpool + "/" + u2, u2)
-    stdout, err = cmd.Output()
-    lock.Unlock()
-
-    if err != nil {
-        println(err.Error())
-        return
-    }
-
-    print(string(stdout))
-
-    // actually start VM
-    // bhyve -c $cpu -A -H -P -m $ram $pci_args -lcom1,/dev/${con}A ioh-$name &
-    // /usr/sbin/bhyve -c 1 -m 512M -H -A -P -g 0 -s 0:0,hostbridge -s 1:0,lpc -s 2:0,virtio-net,tap1 -s 3:0,virtio-blk,/dev/zvol/boxy/i-7fa1e5db -l com1,/dev/nmdm0A i-7fa1e5db
-
-    lock.Lock()
-    cmd = exec.Command("echo", "bhyve", "-c", "1", "-m", "512", "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,tap1", "-s", "3:0,virtio-blk,/dev/zvol/" + zpool + "/" + u2, "-lcom1,/dev/nmdm0A", u2)
-    stdout, err = cmd.Output()
-    lock.Unlock()
-
-    if err != nil {
-        println(err.Error())
-        return
-    }
-
-    print(string(stdout))
-
-    // record process id in property of instance dataset
-    // # zfs set pangolin:pid=4321 boxy/ami-9cda20c6
-
+    bhyveDestroy(u2)
+    bhyveLoad("/dev/nmdm0A", 512, u2)
+    execBhyve("/dev/nmdm0A", 1, 512, tap, u2)
     w.WriteJson(&u2)
-
 }
 
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
@@ -240,15 +262,8 @@ func ImageCreate(w rest.ResponseWriter, r *rest.Request) {
     u2 := u1.String()
     u2 = "ami-" + u2[0:8]
 
-    app := "echo"
-
-    arg0 := "zfs"
-    arg1 := "clone"
-    arg2 := zpool + "/bhyve01@2015081817020001"
-    arg3 := zpool + "/" + u2
-
     lock.Lock()
-    cmd := exec.Command(app, arg0, arg1, arg2, arg3)
+    cmd := exec.Command("echo", "zfs", "clone", zpool + "/bhyve01@2015081817020001", zpool + "/" + u2)
     stdout, err := cmd.Output()
     lock.Unlock()
 
@@ -261,68 +276,3 @@ func ImageCreate(w rest.ResponseWriter, r *rest.Request) {
 
     w.WriteJson(&u2)
 }
-
-
-/*
-
-func GetCountry(w rest.ResponseWriter, r *rest.Request) {
-    code := r.PathParam("code")
-
-    lock.RLock()
-    var country *Country
-    if store[code] != nil {
-        country = &Country{}
-        *country = *store[code]
-    }
-    lock.RUnlock()
-
-    if country == nil {
-        rest.NotFound(w, r)
-        return
-    }
-    w.WriteJson(country)
-}
-
-func GetAllCountries(w rest.ResponseWriter, r *rest.Request) {
-    lock.RLock()
-    countries := make([]Country, len(store))
-    i := 0
-    for _, country := range store {
-        countries[i] = *country
-        i++
-    }
-    lock.RUnlock()
-    w.WriteJson(&countries)
-}
-
-
-func PostCountry(w rest.ResponseWriter, r *rest.Request) {
-    country := Country{}
-    err := r.DecodeJsonPayload(&country)
-    if err != nil {
-        rest.Error(w, err.Error(), http.StatusInternalServerError)
-        return
-    }
-    if country.Code == "" {
-        rest.Error(w, "country code required", 400)
-        return
-    }
-    if country.Name == "" {
-        rest.Error(w, "country name required", 400)
-        return
-    }
-    lock.Lock()
-    store[country.Code] = &country
-    lock.Unlock()
-    w.WriteJson(&country)
-}
-
-func DeleteCountry(w rest.ResponseWriter, r *rest.Request) {
-    code := r.PathParam("code")
-    lock.Lock()
-    delete(store, code)
-    lock.Unlock()
-    w.WriteHeader(http.StatusOK)
-}
-
-*/
