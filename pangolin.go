@@ -29,7 +29,7 @@ func main() {
 
         rest.Post("/api/instances", InstanceStart),
         rest.Get("/api/instances", InstanceList),
-        rest.Delete("/api/instances", InstanceDestroy),
+        rest.Delete("/api/instances/:instanceid", InstanceDestroy),
 
     )
     if err != nil {
@@ -37,11 +37,6 @@ func main() {
     }
     api.SetApp(router)
     log.Fatal(http.ListenAndServe(":8080", api.MakeHandler()))
-}
-
-type Country struct {
-    Code string
-    Name string
 }
 
 type Instances struct {
@@ -52,8 +47,6 @@ type Instances struct {
 type Ami struct {
     Ami string
 }
-
-var store = map[string]*Country{}
 
 var lock = sync.RWMutex{}
 
@@ -110,7 +103,6 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
     }
 
     w.WriteJson(instance_list)
-
 }
 
 func cloneAmi(ami string, instanceid string) {
@@ -254,6 +246,12 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
+    instance := r.PathParam("instanceid")
+    lock.Lock()
+    print(string(instance))
+    lock.Unlock()
+
+    w.WriteJson(&instance)
 }
 
 // TODO make this not hard coded, allow uploading data for instance, etc
