@@ -4,7 +4,7 @@ import (
     "os/exec"
     "strings"
     "strconv"
-//    "regexp"
+    "regexp"
 //    "fmt"
     "github.com/ant0ine/go-json-rest/rest"
 //    "github.com/mistifyio/go-zfs"
@@ -172,15 +172,8 @@ func bhyveLoad(console string, memory int, instanceid string) {
 
 func bhyveDestroy (instanceid string) {
     lock.Lock()
-    cmd := exec.Command("echo", "bhyvectl", "--destroy", "--vm", instanceid)
-    stdout, err := cmd.Output()
+    exec.Command("sudo", "bhyvectl", "--destroy", "--vm", instanceid)
     lock.Unlock()
-
-    if err != nil {
-        println(err.Error())
-        return
-    }
-    print(string(stdout))
 }
 
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
@@ -197,17 +190,62 @@ func execBhyve(console string, cpus int, memory int, tap string, instanceid stri
     print(string(stdout))
 }
 
-func findTap() string {
-    // TODO find new tap interface
+func allocateTap() string {
     // TODO bring tap up? net.link.tap.up_on_open=1 should ensure it, but
     // paranoia, perhaps should have setupTap check state of
     // net.link.tap.up_on_open or do it at startup after reading config
-    return "tap1"
+    lock.Lock()
+    cmd := exec.Command("ifconfig")
+    stdout, err := cmd.Output()
+    lock.Unlock()
+    if err != nil {
+        println(err.Error())
+        return ""
+    }
+
+    lines := strings.Split(string(stdout), "\n")
+
+    t := 0
+    r, err := regexp.Compile(`^tap`)
+
+    for _, line := range lines {
+       if r.MatchString(line) == true {
+           t = t + 1
+       }
+    }
+
+    return "tap" + strconv.Itoa(t)
+}
+
+func freeTap(tap string) {
+    // TODO check that name beings with "tap"
+    cmd := exec.Command("sudo", "ifconfig", tap, "destroy")
+    cmd.Output()
 }
 
 func findBridge() string {
     // TODO create separate bridge for each instance to separate instances
     return "bridge0"
+}
+
+func saveTap(tap string, instanceid string) {
+    // sudo zfs set pangolin:tap=tap3 boxy/i-8cdaae2d
+    cmd := exec.Command("echo", "zfs", "set", "pangolin:tap=" + tap, zpool + "/" + instanceid)
+    stdout, err := cmd.Output()
+    if err != nil {
+        panic(err)
+    }
+    print(string(stdout))
+}
+
+func getTap(instanceid string) string {
+    cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:tap", zpool + "/" + instanceid)
+    stdout, err := cmd.Output()
+    if err != nil {
+        return ""
+    }
+    tap := strings.Fields(string(stdout))[2]
+    return tap
 }
 
 // takes an image id and creates a running instance from it
@@ -232,9 +270,10 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
     cloneAmi(ami.Ami, u2)
 
     // create network interface and bring up
-    tap := findTap()
+    tap := allocateTap()
     bridge := findBridge()
     setupTap(tap)
+    saveTap(tap,u2)
     addTapToBridge(tap, bridge)
     bridgeUp(bridge)
 
@@ -247,10 +286,12 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
     instance := r.PathParam("instanceid")
-    lock.Lock()
-    print(string(instance))
-    lock.Unlock()
-
+    bhyveDestroy(instance)
+    tap := getTap(instance)
+    if len(tap) > 0 {
+        freeTap(tap)
+    }
+    // TODO destroy volume
     w.WriteJson(&instance)
 }
 
