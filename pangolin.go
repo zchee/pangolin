@@ -230,6 +230,27 @@ func allocateTap() string {
     return "tap" + strconv.Itoa(t)
 }
 
+func allocateNmdm() string {
+    nmdm := 0
+    cmd := exec.Command("ls", "/dev/")
+    stdout, err := cmd.Output()
+    if err != nil {
+        return ""
+    }
+
+    lines := strings.Split(string(stdout), "\n")
+    r, err := regexp.Compile(`^nmdm\d+A`)
+
+    for _, line := range lines {
+       if r.MatchString(line) == true {
+           nmdm = nmdm + 1
+       }
+    }
+
+    return "nmdm" + strconv.Itoa(nmdm)
+
+}
+
 func freeTap(tap string) {
     // TODO check that name beings with "tap"
     cmd := exec.Command("sudo", "ifconfig", tap, "destroy")
@@ -307,8 +328,12 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 
     // start the instance
     bhyveDestroy(u2)
-    bhyveLoad("/dev/nmdm0A", 512, u2)
-    execBhyve("/dev/nmdm0A", 1, 512, tap, u2)
+    nmdm := allocateNmdm()
+    if nmdm == "" {
+        return
+    }
+    bhyveLoad("/dev/" + nmdm + "A", 512, u2)
+    execBhyve("/dev/" + nmdm + "A", 1, 512, tap, u2)
     w.WriteJson(&u2)
 }
 
