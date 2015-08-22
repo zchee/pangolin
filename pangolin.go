@@ -114,6 +114,15 @@ func cloneAmi(ami string, instanceid string) {
     print(string(stdout))
 }
 
+func destroyClone(instanceid string) {
+    cmd := exec.Command("sudo", "zfs", "destroy", zpool + "/" + instanceid)
+    _, err := cmd.Output()
+
+    if err != nil {
+        println(err.Error())
+    }
+}
+
 func setupTap(tap string) {
     lock.Lock()
     cmd := exec.Command("sudo", "ifconfig", tap, "create")
@@ -171,9 +180,12 @@ func bhyveLoad(console string, memory int, instanceid string) {
 }
 
 func bhyveDestroy (instanceid string) {
-    lock.Lock()
-    exec.Command("sudo", "bhyvectl", "--destroy", "--vm", instanceid)
-    lock.Unlock()
+    cmd := exec.Command("sudo", "bhyvectl", "--destroy", "--vm", instanceid)
+    _, err := cmd.Output()
+
+    if err != nil {
+        return
+    }
 }
 
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
@@ -244,8 +256,23 @@ func getTap(instanceid string) string {
     if err != nil {
         return ""
     }
+    if len(strings.Fields(string(stdout))) < 2 {
+       return ""
+    }
     tap := strings.Fields(string(stdout))[2]
     return tap
+}
+
+func getPid(instanceid string) string {
+    pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
+    lock.Lock()
+    cmd := exec.Command("sudo", "cat", pidfile)
+    stdout, err := cmd.Output()
+    lock.Unlock()
+    if err != nil {
+        return ""
+    }
+    return string(stdout)
 }
 
 // takes an image id and creates a running instance from it
@@ -284,13 +311,30 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
     w.WriteJson(&u2)
 }
 
+func killInstance(instance string) {
+    pid := getPid(instance)
+    if len(pid) > 0 {
+        exec.Command("sudo", "kill", pid)
+    }
+    bhyveDestroy(instance)
+}
+
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
     instance := r.PathParam("instanceid")
-    bhyveDestroy(instance)
+
+    re, _ := regexp.Compile(`^i-.*`)
+    if re.MatchString(instance) == false {
+        return
+    }
+
     tap := getTap(instance)
     if len(tap) > 0 {
         freeTap(tap)
     }
+    killInstance(instance)
+
+    destroyClone(instance)
+
     // TODO destroy volume
     w.WriteJson(&instance)
 }
