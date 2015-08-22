@@ -28,7 +28,8 @@ func main() {
         rest.Post("/api/images", ImageCreate),
         rest.Get("/api/images", ImageList),
 
-        rest.Post("/api/instances", InstanceStart),
+        rest.Post("/api/instances", InstanceCreate),
+        rest.Post("/api/instances/:instanceid", InstanceStart),
         rest.Get("/api/instances", InstanceList),
         rest.Delete("/api/instances/:instanceid", InstanceDestroy),
 
@@ -265,8 +266,16 @@ func findBridge() string {
 }
 
 func saveTap(tap string, instanceid string) {
-    // sudo zfs set pangolin:tap=tap3 boxy/i-8cdaae2d
     cmd := exec.Command("sudo", "zfs", "set", "pangolin:tap=" + tap, zpool + "/" + instanceid)
+    stdout, err := cmd.Output()
+    if err != nil {
+        panic(err)
+    }
+    print(string(stdout))
+}
+
+func saveNmdm(nmdm string, instanceid string) {
+    cmd := exec.Command("sudo", "zfs", "set", "pangolin:nmdm=" + nmdm, zpool + "/" + instanceid)
     stdout, err := cmd.Output()
     if err != nil {
         panic(err)
@@ -276,6 +285,19 @@ func saveTap(tap string, instanceid string) {
 
 func getTap(instanceid string) string {
     cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:tap", zpool + "/" + instanceid)
+    stdout, err := cmd.Output()
+    if err != nil {
+        return ""
+    }
+    if len(strings.Fields(string(stdout))) < 2 {
+       return ""
+    }
+    tap := strings.Fields(string(stdout))[2]
+    return tap
+}
+
+func getNmdm(instanceid string) string {
+    cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:nmdm", zpool + "/" + instanceid)
     stdout, err := cmd.Output()
     if err != nil {
         return ""
@@ -300,7 +322,7 @@ func getPid(instanceid string) string {
 }
 
 // takes an image id and creates a running instance from it
-func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
+func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
     // get ami
     ami := Ami{}
     err := r.DecodeJsonPayload(&ami)
@@ -322,6 +344,9 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 
     // create network interface and bring up
     tap := allocateTap()
+    if tap == "" {
+        return
+    }
     bridge := findBridge()
     setupTap(tap)
     saveTap(tap,u2)
@@ -334,6 +359,7 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
     if nmdm == "" {
         return
     }
+    saveNmdm(nmdm,u2)
     bhyveLoad("/dev/" + nmdm + "A", 512, u2)
     execBhyve("/dev/" + nmdm + "A", 1, 512, tap, u2)
     w.WriteJson(&u2)
@@ -345,6 +371,36 @@ func killInstance(instance string) {
         exec.Command("sudo", "kill", pid)
     }
     bhyveDestroy(instance)
+}
+
+func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
+    instance := r.PathParam("instanceid")
+
+    re, _ := regexp.Compile(`^i-.*`)
+    if re.MatchString(instance) == false {
+        return
+    }
+
+    // create network interface and bring up
+    tap := getTap(instance)
+    if tap == "" {
+        return
+    }
+    bridge := findBridge()
+    setupTap(tap)
+    addTapToBridge(tap, bridge)
+    bridgeUp(bridge)
+
+    // start the instance
+    bhyveDestroy(instance)
+    nmdm := getNmdm(instance)
+    if nmdm == "" {
+        return
+    }
+    bhyveLoad("/dev/" + nmdm + "A", 512, instance)
+    execBhyve("/dev/" + nmdm + "A", 1, 512, tap, instance)
+    w.WriteJson(&instance)
+
 }
 
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
