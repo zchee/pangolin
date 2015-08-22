@@ -5,6 +5,7 @@ import (
     "strings"
     "strconv"
     "regexp"
+    "time"
 //    "fmt"
     "github.com/ant0ine/go-json-rest/rest"
 //    "github.com/mistifyio/go-zfs"
@@ -332,6 +333,8 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
         freeTap(tap)
     }
     killInstance(instance)
+
+    time.Sleep(1000 * time.Millisecond)
 
     destroyClone(instance)
 
