@@ -40,8 +40,7 @@ func main() {
 }
 
 type Instances struct {
-    Ami string
-    Pid string
+    Instance string
 }
 
 type Ami struct {
@@ -78,31 +77,32 @@ func ImageList(w rest.ResponseWriter, r *rest.Request) {
 
 func InstanceList(w rest.ResponseWriter, r *rest.Request) {
     lock.Lock()
-    cmd := exec.Command("zfs", "get", "-H", "-s", "local", "-t", "volume", "pangolin:pid")
+    cmd := exec.Command("zfs", "list", "-H", "-t", "volume")
     stdout, err := cmd.Output()
     lock.Unlock()
 
     if err != nil {
-        println(err.Error())
+        println(stdout)
         return
     }
 
     lines := strings.Split(string(stdout), "\n")
+
     instance_list := make([]Instances,0)
+    re, err := regexp.Compile(`^i-.*`)
 
     for _, line := range lines {
-       if strings.Contains(line, "ami-") {
-           ami := strings.Split(line, "\t")[0]
-           ami = strings.Split(ami, "/")[1]
-           pid := strings.Split(line, "\t")[2]
-           inst := Instances{}
-           inst.Pid = pid
-           inst.Ami = ami
-           instance_list = append(instance_list, inst)
-       }
+       if (len(line) > 0) {
+           i := strings.Split(line, "\t")[0]
+           i = strings.Split(i, "/")[1]
+           if re.MatchString(i) == true {
+               inst := Instances{}
+               inst.Instance = i
+               instance_list = append(instance_list, inst)
+           }
+        }
     }
-
-    w.WriteJson(instance_list)
+    w.WriteJson(&instance_list)
 }
 
 func cloneAmi(ami string, instanceid string) {
