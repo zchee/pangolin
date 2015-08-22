@@ -219,11 +219,12 @@ func allocateTap() string {
     lines := strings.Split(string(stdout), "\n")
 
     t := 0
-    r, err := regexp.Compile(`^tap`)
+    r, err := regexp.Compile("^tap" + strconv.Itoa(t) + ": .*")
 
     for _, line := range lines {
        if r.MatchString(line) == true {
            t = t + 1
+           r, err = regexp.Compile("^tap" + strconv.Itoa(t) + ": .*")
        }
     }
 
@@ -231,19 +232,20 @@ func allocateTap() string {
 }
 
 func allocateNmdm() string {
-    nmdm := 0
     cmd := exec.Command("ls", "/dev/")
     stdout, err := cmd.Output()
     if err != nil {
         return ""
     }
 
+    nmdm := 0
     lines := strings.Split(string(stdout), "\n")
-    r, err := regexp.Compile(`^nmdm\d+A`)
+    r, err := regexp.Compile("^nmdm" + strconv.Itoa(nmdm) + "+A")
 
     for _, line := range lines {
        if r.MatchString(line) == true {
            nmdm = nmdm + 1
+           r, err = regexp.Compile("^nmdm" + strconv.Itoa(nmdm) + "+A")
        }
     }
 
@@ -353,17 +355,17 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
         return
     }
 
+    killInstance(instance)
+
     tap := getTap(instance)
     if len(tap) > 0 {
         freeTap(tap)
     }
-    killInstance(instance)
 
     time.Sleep(1000 * time.Millisecond)
 
     destroyClone(instance)
 
-    // TODO destroy volume
     w.WriteJson(&instance)
 }
 
