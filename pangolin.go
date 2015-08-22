@@ -106,7 +106,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func cloneAmi(ami string, instanceid string) {
-    cmd := exec.Command("echo", "zfs", "clone", zpool + "/" + ami + "@0", zpool + "/" + instanceid)
+    cmd := exec.Command("sudo", "zfs", "clone", zpool + "/" + ami + "@0", zpool + "/" + instanceid)
     stdout, err := cmd.Output()
     if err != nil {
         panic(err)
@@ -116,7 +116,7 @@ func cloneAmi(ami string, instanceid string) {
 
 func setupTap(tap string) {
     lock.Lock()
-    cmd := exec.Command("echo", "ifconfig", tap, "create")
+    cmd := exec.Command("sudo", "ifconfig", tap, "create")
     stdout, err := cmd.Output()
     lock.Unlock()
 
@@ -130,7 +130,7 @@ func setupTap(tap string) {
 
 func addTapToBridge(tap string, bridge string) {
     lock.Lock()
-    cmd := exec.Command("echo", "ifconfig", bridge, "addm", tap)
+    cmd := exec.Command("sudo", "ifconfig", bridge, "addm", tap)
     stdout, err := cmd.Output()
     lock.Unlock()
 
@@ -144,7 +144,7 @@ func addTapToBridge(tap string, bridge string) {
 
 func bridgeUp(bridge string) {
     lock.Lock()
-    cmd := exec.Command("echo", "ifconfig", bridge, "up")
+    cmd := exec.Command("sudo", "ifconfig", bridge, "up")
     stdout, err := cmd.Output()
     lock.Unlock()
 
@@ -158,7 +158,7 @@ func bridgeUp(bridge string) {
 
 func bhyveLoad(console string, memory int, instanceid string) {
     lock.Lock()
-    cmd := exec.Command("echo", "bhyveload", "-c", console, "-m", strconv.Itoa(memory) + "M", "-d", "/dev/zvol/" + zpool + "/" + instanceid, instanceid)
+    cmd := exec.Command("sudo", "bhyveload", "-c", console, "-m", strconv.Itoa(memory) + "M", "-d", "/dev/zvol/" + zpool + "/" + instanceid, instanceid)
     stdout, err := cmd.Output()
     lock.Unlock()
 
@@ -179,7 +179,7 @@ func bhyveDestroy (instanceid string) {
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
     pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
     lock.Lock()
-    cmd := exec.Command("echo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net," + tap, "-s", "3:0,virtio-blk,/dev/zvol/" + zpool + "/" + instanceid, "-lcom1," + console, instanceid)
+    cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net," + tap, "-s", "3:0,virtio-blk,/dev/zvol/" + zpool + "/" + instanceid, "-lcom1," + console, instanceid)
     stdout, err := cmd.Output()
     lock.Unlock()
 
@@ -230,7 +230,7 @@ func findBridge() string {
 
 func saveTap(tap string, instanceid string) {
     // sudo zfs set pangolin:tap=tap3 boxy/i-8cdaae2d
-    cmd := exec.Command("echo", "zfs", "set", "pangolin:tap=" + tap, zpool + "/" + instanceid)
+    cmd := exec.Command("sudo", "zfs", "set", "pangolin:tap=" + tap, zpool + "/" + instanceid)
     stdout, err := cmd.Output()
     if err != nil {
         panic(err)
