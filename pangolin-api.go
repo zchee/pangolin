@@ -23,7 +23,7 @@ func init() {
 	var c int
 	// defaults
 	listen = ":8080"
-	piddir = "/var/tmp"
+	piddir = "/var/run"
 
 	OptErr = 0
 	for {
@@ -70,6 +70,7 @@ func main() {
 
 type Instances struct {
 	Instance string
+	Running	bool
 }
 
 type Ima struct {
@@ -121,7 +122,6 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 	instance_list := make([]Instances, 0)
 	re, err := regexp.Compile(`^i-.*`)
 
-	// TODO return instance status (running or stopped)
 	for _, line := range lines {
 		if len(line) > 0 {
 			i := strings.Split(line, "\t")[0]
@@ -129,6 +129,10 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 			if re.MatchString(i) == true {
 				inst := Instances{}
 				inst.Instance = i
+				_, err := getPid(inst.Instance)
+				if err == nil {
+					inst.Running = true
+				}
 				instance_list = append(instance_list, inst)
 			}
 		}
@@ -339,16 +343,16 @@ func getNmdm(instanceid string) string {
 	return tap
 }
 
-func getPid(instanceid string) string {
-	pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
+func getPid(instanceid string) (string, error) {
+	pidfile := piddir + "/pangolin." + instanceid + ".pid"
 	lock.Lock()
 	cmd := exec.Command("sudo", "cat", pidfile)
 	stdout, err := cmd.Output()
 	lock.Unlock()
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return string(stdout)
+	return string(stdout), nil
 }
 
 // takes an image id and creates a running instance from it
@@ -401,7 +405,7 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func killInstance(instance string) {
-	pid := getPid(instance)
+	pid, _ := getPid(instance)
 	if len(pid) > 0 {
 		exec.Command("sudo", "kill", pid)
 	}
