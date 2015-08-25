@@ -2,9 +2,11 @@ package main
 
 import (
 	"github.com/ant0ine/go-json-rest/rest"
+	. "github.com/mattn/go-getopt"
 	"github.com/satori/go.uuid"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -14,7 +16,26 @@ import (
 )
 
 // TODO config
-var zpool = "boxy"
+var zpool string
+
+func init() {
+	var c int
+
+	OptErr = 0
+	for {
+		if c = Getopt("z:h"); c == EOF {
+			break
+		}
+		switch c {
+		case 'z':
+			zpool = OptArg
+		case 'h':
+			println("usage: pangolin [-z zpool||-h]")
+			os.Exit(1)
+		}
+	}
+
+}
 
 func main() {
 	api := rest.NewApi()
@@ -92,7 +113,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 	instance_list := make([]Instances, 0)
 	re, err := regexp.Compile(`^i-.*`)
 
-        // TODO return instance status (running or stopped)
+	// TODO return instance status (running or stopped)
 	for _, line := range lines {
 		if len(line) > 0 {
 			i := strings.Split(line, "\t")[0]
@@ -191,10 +212,10 @@ func bhyveDestroy(instanceid string) {
 }
 
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
-        // TODO config
+	// TODO config
 	pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
 	lock.Lock()
-        // TODO config for priority/nice and more
+	// TODO config for priority/nice and more
 	cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,"+tap, "-s", "3:0,virtio-blk,/dev/zvol/"+zpool+"/"+instanceid, "-lcom1,"+console, instanceid)
 	stdout, err := cmd.Output()
 	lock.Unlock()
@@ -362,7 +383,7 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		return
 	}
 	saveNmdm(nmdm, u2)
-        // TODO customize CPUs and memory
+	// TODO customize CPUs and memory
 	bhyveLoad("/dev/"+nmdm+"A", 512, u2)
 	execBhyve("/dev/"+nmdm+"A", 1, 512, tap, u2)
 	w.WriteJson(&u2)
@@ -415,7 +436,7 @@ func InstanceStop(w rest.ResponseWriter, r *rest.Request) {
 	}
 
 	killInstance(instance)
-        return
+	return
 }
 
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
@@ -433,7 +454,7 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 		freeTap(tap)
 	}
 
-        // wait for VM to stop
+	// wait for VM to stop
 	time.Sleep(1000 * time.Millisecond)
 
 	destroyClone(instance)
@@ -447,7 +468,7 @@ func ImageCreate(w rest.ResponseWriter, r *rest.Request) {
 	u2 = "ima-" + u2[0:8]
 
 	lock.Lock()
-        // TODO make this not hard coded, allow uploading data for instance, etc
+	// TODO make this not hard coded, allow uploading data for instance, etc
 	cmd := exec.Command("echo", "zfs", "clone", zpool+"/bhyve01@2015081817020001", zpool+"/"+u2)
 	stdout, err := cmd.Output()
 	lock.Unlock()
