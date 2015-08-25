@@ -227,7 +227,6 @@ func bhyveDestroy(instanceid string) {
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
 	pidfile := piddir + "/pangolin." + instanceid + ".pid"
 	lock.Lock()
-	// TODO pull cpu and memory info from request
 	cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,"+tap, "-s", "3:0,virtio-blk,/dev/zvol/"+zpool+"/"+instanceid, "-lcom1,"+console, instanceid)
 	stdout, err := cmd.Output()
 	lock.Unlock()
