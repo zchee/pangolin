@@ -45,8 +45,8 @@ type Instances struct {
 	Instance string
 }
 
-type Ami struct {
-	Ami string
+type Ima struct {
+	Ima string
 }
 
 var lock = sync.RWMutex{}
@@ -64,17 +64,17 @@ func ImageList(w rest.ResponseWriter, r *rest.Request) {
 	}
 
 	lines := strings.Split(string(stdout), "\n")
-	amis := make([]string, 0)
+	imas := make([]string, 0)
 
 	for _, line := range lines {
 		if strings.Contains(line, "ima-") {
 			n := strings.Split(line, "\t")[0]
 			n = strings.Split(n, "/")[1]
-			amis = append(amis, n)
+			imas = append(imas, n)
 		}
 	}
 
-	w.WriteJson(amis)
+	w.WriteJson(imas)
 }
 
 func InstanceList(w rest.ResponseWriter, r *rest.Request) {
@@ -108,8 +108,8 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 	w.WriteJson(&instance_list)
 }
 
-func cloneAmi(ami string, instanceid string) {
-	cmd := exec.Command("sudo", "zfs", "clone", zpool+"/"+ami+"@0", zpool+"/"+instanceid)
+func cloneIma(ima string, instanceid string) {
+	cmd := exec.Command("sudo", "zfs", "clone", zpool+"/"+ima+"@0", zpool+"/"+instanceid)
 	stdout, err := cmd.Output()
 	if err != nil {
 		panic(err)
@@ -324,24 +324,24 @@ func getPid(instanceid string) string {
 
 // takes an image id and creates a running instance from it
 func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
-	// get ami
-	ami := Ami{}
-	err := r.DecodeJsonPayload(&ami)
+	// get ima
+	ima := Ima{}
+	err := r.DecodeJsonPayload(&ima)
 	if err != nil {
 		rest.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if ami.Ami == "" {
-		rest.Error(w, "ami required", 400)
+	if ima.Ima == "" {
+		rest.Error(w, "ima required", 400)
 		return
 	}
 
-	// clone ami to instance
+	// clone ima to instance
 	u1 := uuid.NewV4()
 	u2 := u1.String()
 	u2 = "i-" + u2[0:8]
 
-	cloneAmi(ami.Ami, u2)
+	cloneIma(ima.Ima, u2)
 
 	// create network interface and bring up
 	tap := allocateTap()

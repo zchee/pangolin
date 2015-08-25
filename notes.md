@@ -3,11 +3,11 @@ idea: build a FreeBSD based infrastructure as a service
 requirements:
   - api server (go based) that can create new instances based on existing golden images
     + launch instances
-    - stop instances
-    - terminate/destroy instances
+    + stop instances
+    + terminate/destroy instances
     - create new instances based on snapshots of existing instances
     - basically, AWS EC2, Digital Ocean, vmware to a degree, entirely on-prem
-    - puts config data into zfs properties
+    + puts config data into zfs properties
     - config file for network interfaces?
     - serial stuff
     - read iohyve/iocage for inspiration
