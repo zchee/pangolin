@@ -76,6 +76,7 @@ type Instances struct {
 type Ima struct {
 	Ima string
 	Mem int
+	Cpu int
 }
 
 var lock = sync.RWMutex{}
@@ -372,6 +373,10 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		rest.Error(w, "memory required", 400)
 		return
 	}
+	if ima.Cpu == 0 {
+		rest.Error(w, "cpu required", 400)
+		return
+	}
 
 	// clone ima to instance
 	u1 := uuid.NewV4()
@@ -400,7 +405,7 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	saveNmdm(nmdm, u2)
 	// TODO customize CPUs
 	bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
-	execBhyve("/dev/"+nmdm+"A", 1, ima.Mem, tap, u2)
+	execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
 	w.WriteJson(&u2)
 }
 
