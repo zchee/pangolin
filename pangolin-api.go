@@ -11,11 +11,9 @@ import (
 	"strings"
 	"sync"
 	"time"
-	//"github.com/mistifyio/go-zfs"
-	//"fmt"
 )
 
-// TODO read config file
+// TODO config
 var zpool = "boxy"
 
 func main() {
@@ -38,6 +36,7 @@ func main() {
 		log.Fatal(err)
 	}
 	api.SetApp(router)
+	// TODO config address and port
 	log.Fatal(http.ListenAndServe(":8080", api.MakeHandler()))
 }
 
@@ -192,8 +191,10 @@ func bhyveDestroy(instanceid string) {
 }
 
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
+        // TODO config
 	pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
 	lock.Lock()
+        // TODO config for priority/nice and more
 	cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,"+tap, "-s", "3:0,virtio-blk,/dev/zvol/"+zpool+"/"+instanceid, "-lcom1,"+console, instanceid)
 	stdout, err := cmd.Output()
 	lock.Unlock()
@@ -208,7 +209,7 @@ func execBhyve(console string, cpus int, memory int, tap string, instanceid stri
 func allocateTap() string {
 	// TODO bring tap up? net.link.tap.up_on_open=1 should ensure it, but
 	// paranoia, perhaps should have setupTap check state of
-	// net.link.tap.up_on_open or do it at startup after reading config
+	// net.link.tap.up_on_open or do it at startup
 	lock.Lock()
 	cmd := exec.Command("ifconfig")
 	stdout, err := cmd.Output()
@@ -256,7 +257,7 @@ func allocateNmdm() string {
 }
 
 func freeTap(tap string) {
-	// TODO check that name beings with "tap"
+	// TODO check that name begins with "tap"
 	cmd := exec.Command("sudo", "ifconfig", tap, "destroy")
 	cmd.Output()
 }
@@ -361,6 +362,7 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		return
 	}
 	saveNmdm(nmdm, u2)
+        // TODO customize CPUs and memory
 	bhyveLoad("/dev/"+nmdm+"A", 512, u2)
 	execBhyve("/dev/"+nmdm+"A", 1, 512, tap, u2)
 	w.WriteJson(&u2)
@@ -439,13 +441,13 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 	w.WriteJson(&instance)
 }
 
-// TODO make this not hard coded, allow uploading data for instance, etc
 func ImageCreate(w rest.ResponseWriter, r *rest.Request) {
 	u1 := uuid.NewV4()
 	u2 := u1.String()
 	u2 = "ima-" + u2[0:8]
 
 	lock.Lock()
+        // TODO make this not hard coded, allow uploading data for instance, etc
 	cmd := exec.Command("echo", "zfs", "clone", zpool+"/bhyve01@2015081817020001", zpool+"/"+u2)
 	stdout, err := cmd.Output()
 	lock.Unlock()
