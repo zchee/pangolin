@@ -27,16 +27,19 @@ requirements:
   - control access between instances
 
 # list images
-curl -i http://127.0.0.1:8080/api/images
+curl -i http://127.0.0.1:8080/api/v1/images
 
-# launch instance from image
-curl -i -H 'Content-Type: application/json' -d '{"ami": "ami-5ba513f9"}' http://127.0.0.1:8080/api/instances
+# launch instance from image (creates and starts)
+curl -i -H 'Content-Type: application/json' -d '{"ima": "<imageid>"}' http://127.0.0.1:8080/api/v1/instances
 
 # list instances
-curl -i http://127.0.0.1:8080/api/instances
+curl -i http://127.0.0.1:8080/api/v1/instances
 
-# delete instance
-curl -i -X DELETE http://127.0.0.1:8080/api/instances/i-1146b061
+# stop instance
+curl -i -X PUT http://127.0.0.1:8080/api/v1/instances/<instanceid>
 
 # start instance
-curl -i -X POST http://127.0.0.1:8080/api/instances/i-8a97cafe
+curl -i -X POST http://127.0.0.1:8080/api/v1/instances/<instanceid>
+
+# delete instance
+curl -i -X DELETE http://127.0.0.1:8080/api/v1/instances/<instanceid>

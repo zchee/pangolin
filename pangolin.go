@@ -25,13 +25,14 @@ func main() {
 
 		// TODO http://docs.aws.amazon.com/AWSEC2/latest/APIReference/OperationList-query.html
 
-		rest.Post("/api/images", ImageCreate),
-		rest.Get("/api/images", ImageList),
+		rest.Post("/api/v1/images", ImageCreate),
+		rest.Get("/api/v1/images", ImageList),
 
-		rest.Post("/api/instances", InstanceCreate),
-		rest.Post("/api/instances/:instanceid", InstanceStart),
-		rest.Get("/api/instances", InstanceList),
-		rest.Delete("/api/instances/:instanceid", InstanceDestroy),
+		rest.Post("/api/v1/instances", InstanceCreate),
+		rest.Post("/api/v1/instances/:instanceid", InstanceStart),
+		rest.Put("/api/v1/instances/:instanceid", InstanceStop),
+		rest.Get("/api/v1/instances", InstanceList),
+		rest.Delete("/api/v1/instances/:instanceid", InstanceDestroy),
 	)
 	if err != nil {
 		log.Fatal(err)
@@ -66,7 +67,7 @@ func ImageList(w rest.ResponseWriter, r *rest.Request) {
 	amis := make([]string, 0)
 
 	for _, line := range lines {
-		if strings.Contains(line, "ami-") {
+		if strings.Contains(line, "ima-") {
 			n := strings.Split(line, "\t")[0]
 			n = strings.Split(n, "/")[1]
 			amis = append(amis, n)
@@ -92,6 +93,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 	instance_list := make([]Instances, 0)
 	re, err := regexp.Compile(`^i-.*`)
 
+        // TODO return instance status (running or stopped)
 	for _, line := range lines {
 		if len(line) > 0 {
 			i := strings.Split(line, "\t")[0]
@@ -402,6 +404,18 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 
 }
 
+func InstanceStop(w rest.ResponseWriter, r *rest.Request) {
+	instance := r.PathParam("instanceid")
+
+	re, _ := regexp.Compile(`^i-.*`)
+	if re.MatchString(instance) == false {
+		return
+	}
+
+	killInstance(instance)
+        return
+}
+
 func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 	instance := r.PathParam("instanceid")
 
@@ -417,6 +431,7 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 		freeTap(tap)
 	}
 
+        // wait for VM to stop
 	time.Sleep(1000 * time.Millisecond)
 
 	destroyClone(instance)
@@ -428,7 +443,7 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 func ImageCreate(w rest.ResponseWriter, r *rest.Request) {
 	u1 := uuid.NewV4()
 	u2 := u1.String()
-	u2 = "ami-" + u2[0:8]
+	u2 = "ima-" + u2[0:8]
 
 	lock.Lock()
 	cmd := exec.Command("echo", "zfs", "clone", zpool+"/bhyve01@2015081817020001", zpool+"/"+u2)
