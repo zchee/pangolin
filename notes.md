@@ -30,7 +30,7 @@ requirements:
 curl -i http://127.0.0.1:8080/api/v1/images
 
 # launch instance from image (creates and starts)
-curl -i -H 'Content-Type: application/json' -d '{"ima": "<imageid>"}' http://127.0.0.1:8080/api/v1/instances
+curl -i -H 'Content-Type: application/json' -d '{"ima": "<imageid>", "mem": 512, "cpu": 1}' http://127.0.0.1:8080/api/v1/instances
 
 # list instances
 curl -i http://127.0.0.1:8080/api/v1/instances
