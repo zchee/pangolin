@@ -15,22 +15,30 @@ import (
 	"time"
 )
 
-// TODO config
 var zpool string
+var listen string
+var piddir string
 
 func init() {
 	var c int
+	// defaults
+	listen = ":8080"
+	piddir = "/var/tmp"
 
 	OptErr = 0
 	for {
-		if c = Getopt("z:h"); c == EOF {
+		if c = Getopt("z:l:p:h"); c == EOF {
 			break
 		}
 		switch c {
 		case 'z':
 			zpool = OptArg
+		case 'l':
+			listen = OptArg
+		case 'p':
+			piddir = OptArg
 		case 'h':
-			println("usage: pangolin [-z zpool||-h]")
+			println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-h]")
 			os.Exit(1)
 		}
 	}
@@ -57,8 +65,7 @@ func main() {
 		log.Fatal(err)
 	}
 	api.SetApp(router)
-	// TODO config address and port
-	log.Fatal(http.ListenAndServe(":8080", api.MakeHandler()))
+	log.Fatal(http.ListenAndServe(listen, api.MakeHandler()))
 }
 
 type Instances struct {
@@ -212,10 +219,9 @@ func bhyveDestroy(instanceid string) {
 }
 
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
-	// TODO config
-	pidfile := "/var/tmp/pangolin." + instanceid + ".pid"
+	pidfile := piddir + "/pangolin." + instanceid + ".pid"
 	lock.Lock()
-	// TODO config for priority/nice and more
+	// TODO pull cpu and memory info from request
 	cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,"+tap, "-s", "3:0,virtio-blk,/dev/zvol/"+zpool+"/"+instanceid, "-lcom1,"+console, instanceid)
 	stdout, err := cmd.Output()
 	lock.Unlock()
