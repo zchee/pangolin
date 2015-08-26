@@ -614,14 +614,7 @@ func InstanceStop(w rest.ResponseWriter, r *rest.Request) {
 	return
 }
 
-func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
-	instance := r.PathParam("instanceid")
-
-	re, _ := regexp.Compile(`^i-.*`)
-	if re.MatchString(instance) == false {
-		return
-	}
-
+func realInstanceDestroy(instance string) {
 	killInstance(instance)
 
 	tap := getTap(instance)
@@ -633,6 +626,17 @@ func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
 	time.Sleep(1000 * time.Millisecond)
 
 	destroyClone(instance)
+}
+
+func InstanceDestroy(w rest.ResponseWriter, r *rest.Request) {
+	instance := r.PathParam("instanceid")
+
+	re, _ := regexp.Compile(`^i-.*`)
+	if re.MatchString(instance) == false {
+		return
+	}
+
+	go realInstanceDestroy(instance)
 
 	w.WriteJson(&instance)
 }
