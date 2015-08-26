@@ -148,7 +148,6 @@ func getImaOs(imageid string) string {
 	if err != nil {
 		return ""
 	}
-	println(stdout)
 	if len(strings.Fields(string(stdout))) < 2 {
 		return ""
 	}
