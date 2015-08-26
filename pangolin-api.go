@@ -326,7 +326,7 @@ func allocateNmdm() string {
 
 	nmdm := 0
 	lines := strings.Split(string(stdout), "\n")
-	r, err := regexp.Compile("^nmdm" + strconv.Itoa(nmdm) + "+A")
+	r, err := regexp.Compile("^nmdm" + strconv.Itoa(nmdm) + "A")
 
 	for _, line := range lines {
 		if r.MatchString(line) == true {
@@ -408,8 +408,8 @@ func getNmdm(instanceid string) string {
 	if len(strings.Fields(string(stdout))) < 2 {
 		return ""
 	}
-	tap := strings.Fields(string(stdout))[2]
-	return tap
+	nmdm := strings.Fields(string(stdout))[2]
+	return nmdm
 }
 
 func getCpu(instanceid string) int {
@@ -472,44 +472,57 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		return
 	}
 
-	// clone ima to instance
+	// start the instance
+	os := getImaOs(ima.Ima)
+	switch os {
+	case "freebsd":
+		// clone ima to instance
+
+		u2 := allocateInstanceId()
+		cloneIma(ima.Ima, u2)
+
+		// create network interface and bring up
+		tap := allocateTap()
+		if tap == "" {
+			return
+		}
+		bridge := findBridge()
+		setupTap(tap)
+		addTapToBridge(tap, bridge)
+		bridgeUp(bridge)
+
+		// cleanup leftover instance if needed
+		bhyveDestroy(u2)
+		nmdm := allocateNmdm()
+		if nmdm == "" {
+			return
+		}
+		saveTap(tap, u2)
+		saveNmdm(nmdm, u2)
+		saveCpu(ima.Cpu, u2)
+		saveMem(ima.Mem, u2)
+		bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
+		execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
+		w.WriteJson(&u2)
+	default:
+		rest.Error(w, "unknown OS", 400)
+	}
+}
+
+func allocateInstanceId() string {
 	u1 := uuid.NewV4()
 	u2 := u1.String()
 	u2 = "i-" + u2[0:8]
-
-	cloneIma(ima.Ima, u2)
-
-	// create network interface and bring up
-	tap := allocateTap()
-	if tap == "" {
-		return
-	}
-	bridge := findBridge()
-	setupTap(tap)
-	addTapToBridge(tap, bridge)
-	bridgeUp(bridge)
-
-	// cleanup leftover instance if needed
-	bhyveDestroy(u2)
-	nmdm := allocateNmdm()
-	if nmdm == "" {
-		return
-	}
-	saveTap(tap, u2)
-	saveNmdm(nmdm, u2)
-	saveCpu(ima.Cpu, u2)
-	saveMem(ima.Mem, u2)
-	// start the instance
-	bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
-	execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
-	w.WriteJson(&u2)
+	return u2
 }
 
 func killInstance(instance string) {
 	pid, _ := getPid(instance)
 	if len(pid) > 0 {
-		exec.Command("sudo", "kill", pid)
+		cmd := exec.Command("sudo", "kill", pid)
+		cmd.Output()
 	}
+	time.Sleep(15000 * time.Millisecond)
 	bhyveDestroy(instance)
 }
 
@@ -543,8 +556,6 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 	if nmdm == "" {
 		return
 	}
-	saveTap(tap, instance)
-	saveNmdm(nmdm, instance)
 	cpu := getCpu(instance)
 	mem := getMem(instance)
 	bhyveLoad("/dev/"+nmdm+"A", mem, instance)
