@@ -521,6 +521,12 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 		return
 	}
 
+	_, err := getPid(instance)
+	if err == nil {
+		w.WriteJson(&instance)
+		return
+	}
+
 	// create network interface and bring up
 	tap := getTap(instance)
 	if tap == "" {
