@@ -46,6 +46,11 @@ func init() {
 }
 
 func main() {
+	if zpool == "" {
+		println("zpool required")
+		println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-h]")
+		os.Exit(1)
+	}
 	api := rest.NewApi()
 	api.Use(rest.DefaultDevStack...)
 	router, err := rest.MakeRouter(
@@ -74,6 +79,11 @@ type Instances struct {
 	Image string
 }
 
+type Images struct {
+	Imageid string
+	Os string
+}
+
 type Ima struct {
 	Ima string
 	Mem int
@@ -90,18 +100,20 @@ func ImageList(w rest.ResponseWriter, r *rest.Request) {
 	lock.Unlock()
 
 	if err != nil {
-		println(err.Error())
 		return
 	}
 
 	lines := strings.Split(string(stdout), "\n")
-	imas := make([]string, 0)
+	imas := make([]Images, 0)
 
 	for _, line := range lines {
 		if strings.Contains(line, "ima-") {
+			ima := Images{}
 			n := strings.Split(line, "\t")[0]
 			n = strings.Split(n, "/")[1]
-			imas = append(imas, n)
+			ima.Imageid = n
+			ima.Os = getImaOs(ima.Imageid)
+			imas = append(imas, ima)
 		}
 	}
 
@@ -125,6 +137,25 @@ func getInstanceIma(instanceid string) string {
 	origin = strings.Split(origin, "@")[0]
 
 	return origin
+}
+
+func getImaOs(imageid string) string {
+	lock.Lock()
+	cmd := exec.Command("sudo", "zfs", "get", "-H", "pangolin:os", zpool+"/"+imageid)
+	stdout, err := cmd.Output()
+	lock.Unlock()
+
+	if err != nil {
+		return ""
+	}
+	println(stdout)
+	if len(strings.Fields(string(stdout))) < 2 {
+		return ""
+	}
+	os := strings.Fields(string(stdout))[2]
+
+	return os
+
 }
 
 func InstanceList(w rest.ResponseWriter, r *rest.Request) {
@@ -416,14 +447,14 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	addTapToBridge(tap, bridge)
 	bridgeUp(bridge)
 
-	// start the instance
+	// cleanup leftover instance if needed
 	bhyveDestroy(u2)
 	nmdm := allocateNmdm()
 	if nmdm == "" {
 		return
 	}
 	saveNmdm(nmdm, u2)
-	// TODO customize CPUs
+	// start the instance
 	bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
 	execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
 	w.WriteJson(&u2)
