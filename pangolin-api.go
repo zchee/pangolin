@@ -522,6 +522,7 @@ func killInstance(instance string) {
 		cmd := exec.Command("sudo", "kill", pid)
 		cmd.Output()
 	}
+	// TODO poll for process dying
 	time.Sleep(15000 * time.Millisecond)
 	bhyveDestroy(instance)
 }
@@ -540,27 +541,35 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 		return
 	}
 
-	// create network interface and bring up
-	tap := getTap(instance)
-	if tap == "" {
-		return
-	}
-	bridge := findBridge()
-	setupTap(tap)
-	addTapToBridge(tap, bridge)
-	bridgeUp(bridge)
+	ima := getInstanceIma(instance)
+	os := getImaOs(ima)
 
-	// start the instance
-	bhyveDestroy(instance)
-	nmdm := getNmdm(instance)
-	if nmdm == "" {
-		return
+	switch os {
+	case "freebsd":
+		// create network interface and bring up
+		tap := getTap(instance)
+		if tap == "" {
+			return
+		}
+		bridge := findBridge()
+		setupTap(tap)
+		addTapToBridge(tap, bridge)
+		bridgeUp(bridge)
+
+		// start the instance
+		bhyveDestroy(instance)
+		nmdm := getNmdm(instance)
+		if nmdm == "" {
+			return
+		}
+		cpu := getCpu(instance)
+		mem := getMem(instance)
+		bhyveLoad("/dev/"+nmdm+"A", mem, instance)
+		execBhyve("/dev/"+nmdm+"A", cpu, mem, tap, instance)
+		w.WriteJson(&instance)
+	default:
+		rest.Error(w, "unknown OS", 400)
 	}
-	cpu := getCpu(instance)
-	mem := getMem(instance)
-	bhyveLoad("/dev/"+nmdm+"A", mem, instance)
-	execBhyve("/dev/"+nmdm+"A", cpu, mem, tap, instance)
-	w.WriteJson(&instance)
 
 }
 
@@ -572,7 +581,7 @@ func InstanceStop(w rest.ResponseWriter, r *rest.Request) {
 		return
 	}
 
-	killInstance(instance)
+	go killInstance(instance)
 	return
 }
 
