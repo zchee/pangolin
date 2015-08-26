@@ -368,6 +368,24 @@ func saveNmdm(nmdm string, instanceid string) {
 	print(string(stdout))
 }
 
+func saveCpu(cpu int, instanceid string) {
+	cmd := exec.Command("sudo", "zfs", "set", "pangolin:cpu="+strconv.Itoa(cpu), zpool+"/"+instanceid)
+	stdout, err := cmd.Output()
+	if err != nil {
+		panic(err)
+	}
+	print(string(stdout))
+}
+
+func saveMem(mem int, instanceid string) {
+	cmd := exec.Command("sudo", "zfs", "set", "pangolin:mem="+strconv.Itoa(mem), zpool+"/"+instanceid)
+	stdout, err := cmd.Output()
+	if err != nil {
+		panic(err)
+	}
+	print(string(stdout))
+}
+
 func getTap(instanceid string) string {
 	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:tap", zpool+"/"+instanceid)
 	stdout, err := cmd.Output()
@@ -392,6 +410,32 @@ func getNmdm(instanceid string) string {
 	}
 	tap := strings.Fields(string(stdout))[2]
 	return tap
+}
+
+func getCpu(instanceid string) int {
+	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:cpu", zpool+"/"+instanceid)
+	stdout, err := cmd.Output()
+	if err != nil {
+		return -1
+	}
+	if len(strings.Fields(string(stdout))) < 2 {
+		return -1
+	}
+	cpu, _ := strconv.Atoi(strings.Fields(string(stdout))[2])
+	return cpu
+}
+
+func getMem(instanceid string) int {
+	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:mem", zpool+"/"+instanceid)
+	stdout, err := cmd.Output()
+	if err != nil {
+		return -1
+	}
+	if len(strings.Fields(string(stdout))) < 2 {
+		return -1
+	}
+	mem, _ := strconv.Atoi(strings.Fields(string(stdout))[2])
+	return mem
 }
 
 func getPid(instanceid string) (string, error) {
@@ -442,7 +486,6 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	}
 	bridge := findBridge()
 	setupTap(tap)
-	saveTap(tap, u2)
 	addTapToBridge(tap, bridge)
 	bridgeUp(bridge)
 
@@ -452,7 +495,10 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	if nmdm == "" {
 		return
 	}
+	saveTap(tap, u2)
 	saveNmdm(nmdm, u2)
+	saveCpu(ima.Cpu, u2)
+	saveMem(ima.Mem, u2)
 	// start the instance
 	bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
 	execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
@@ -491,8 +537,12 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 	if nmdm == "" {
 		return
 	}
-	bhyveLoad("/dev/"+nmdm+"A", 512, instance)
-	execBhyve("/dev/"+nmdm+"A", 1, 512, tap, instance)
+	saveTap(tap, instance)
+	saveNmdm(nmdm, instance)
+	cpu := getCpu(instance)
+	mem := getMem(instance)
+	bhyveLoad("/dev/"+nmdm+"A", mem, instance)
+	execBhyve("/dev/"+nmdm+"A", cpu, mem, tap, instance)
 	w.WriteJson(&instance)
 
 }
