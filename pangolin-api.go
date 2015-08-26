@@ -212,11 +212,14 @@ func destroyClone(instanceid string) {
 
 func setupTap(tap string) {
 	lock.Lock()
-	cmd := exec.Command("sudo", "ifconfig", tap, "create")
+	cmd := exec.Command("sudo", "ifconfig", tap, "destroy")
 	stdout, err := cmd.Output()
+	cmd = exec.Command("sudo", "ifconfig", tap, "create")
+	stdout, err = cmd.Output()
 	lock.Unlock()
 
 	if err != nil {
+		println("setupTap error: ")
 		println(err.Error())
 		return
 	}
@@ -231,6 +234,7 @@ func addTapToBridge(tap string, bridge string) {
 	lock.Unlock()
 
 	if err != nil {
+		println("addTapToBridge error: ")
 		println(err.Error())
 		return
 	}
@@ -253,10 +257,8 @@ func bridgeUp(bridge string) {
 }
 
 func bhyveLoad(console string, memory int, instanceid string) {
-	lock.Lock()
 	cmd := exec.Command("sudo", "bhyveload", "-c", console, "-m", strconv.Itoa(memory)+"M", "-d", "/dev/zvol/"+zpool+"/"+instanceid, instanceid)
 	stdout, err := cmd.Output()
-	lock.Unlock()
 
 	if err != nil {
 		println(err.Error())
@@ -277,10 +279,8 @@ func bhyveDestroy(instanceid string) {
 
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
 	pidfile := piddir + "/pangolin." + instanceid + ".pid"
-	lock.Lock()
 	cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,"+tap, "-s", "3:0,virtio-blk,/dev/zvol/"+zpool+"/"+instanceid, "-lcom1,"+console, instanceid)
 	stdout, err := cmd.Output()
-	lock.Unlock()
 
 	if err != nil {
 		println(err.Error())
@@ -477,7 +477,6 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	switch os {
 	case "freebsd":
 		// clone ima to instance
-
 		u2 := allocateInstanceId()
 		cloneIma(ima.Ima, u2)
 
@@ -501,12 +500,44 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		saveNmdm(nmdm, u2)
 		saveCpu(ima.Cpu, u2)
 		saveMem(ima.Mem, u2)
-		bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
-		execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
+		go startFreeBSDVM("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
+		w.WriteJson(&u2)
+	case "linux":
+		// clone ima to instance
+		u2 := allocateInstanceId()
+		cloneIma(ima.Ima, u2)
+
+		// create network interface and bring up
+		tap := allocateTap()
+		if tap == "" {
+			return
+		}
+		bridge := findBridge()
+		setupTap(tap)
+		addTapToBridge(tap, bridge)
+		bridgeUp(bridge)
+
+		nmdm := allocateNmdm()
+		if nmdm == "" {
+			return
+		}
+		saveTap(tap, u2)
+		saveNmdm(nmdm, u2)
+		saveCpu(ima.Cpu, u2)
+		saveMem(ima.Mem, u2)
+		// bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
+		// execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
 		w.WriteJson(&u2)
 	default:
 		rest.Error(w, "unknown OS", 400)
 	}
+}
+
+func startFreeBSDVM(console string, cpus int, memory int, tap string, instanceid string) {
+	// cleanup leftover instance if needed
+	bhyveDestroy(instanceid)
+	bhyveLoad(console, memory, instanceid)
+	execBhyve(console, cpus, memory, tap, instanceid)
 }
 
 func allocateInstanceId() string {
@@ -557,15 +588,13 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 		bridgeUp(bridge)
 
 		// start the instance
-		bhyveDestroy(instance)
 		nmdm := getNmdm(instance)
 		if nmdm == "" {
 			return
 		}
 		cpu := getCpu(instance)
 		mem := getMem(instance)
-		bhyveLoad("/dev/"+nmdm+"A", mem, instance)
-		execBhyve("/dev/"+nmdm+"A", cpu, mem, tap, instance)
+		go startFreeBSDVM("/dev/"+nmdm+"A", cpu, mem, tap, instance)
 		w.WriteJson(&instance)
 	default:
 		rest.Error(w, "unknown OS", 400)
