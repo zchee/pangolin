@@ -75,13 +75,13 @@ func main() {
 
 type Instances struct {
 	Instance string
-	Running	bool
-	Image string
+	Running  bool
+	Image    string
 }
 
 type Images struct {
 	Imageid string
-	Os string
+	Os      string
 }
 
 type Ima struct {
