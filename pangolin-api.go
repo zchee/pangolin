@@ -71,6 +71,7 @@ func main() {
 type Instances struct {
 	Instance string
 	Running	bool
+	Image string
 }
 
 type Ima struct {
@@ -107,6 +108,25 @@ func ImageList(w rest.ResponseWriter, r *rest.Request) {
 	w.WriteJson(imas)
 }
 
+func getInstanceIma(instanceid string) string {
+	lock.Lock()
+	cmd := exec.Command("zfs", "get", "-H", "origin", zpool+"/"+instanceid)
+	stdout, err := cmd.Output()
+	lock.Unlock()
+
+	if err != nil {
+		return ""
+	}
+	if len(strings.Fields(string(stdout))) < 2 {
+		return ""
+	}
+	origin := strings.Fields(string(stdout))[2]
+	origin = strings.Split(origin, "/")[1]
+	origin = strings.Split(origin, "@")[0]
+
+	return origin
+}
+
 func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 	lock.Lock()
 	cmd := exec.Command("zfs", "list", "-H", "-t", "volume")
@@ -134,6 +154,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 				if err == nil {
 					inst.Running = true
 				}
+				inst.Image = getInstanceIma(i)
 				instance_list = append(instance_list, inst)
 			}
 		}
