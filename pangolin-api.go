@@ -254,7 +254,7 @@ func InstanceList(w rest.ResponseWriter, r *rest.Request) {
 }
 
 func cloneIma(ima string, instanceid string) {
-	cmd := exec.Command("sudo", "zfs", "clone", zpool+"/"+ima+"@0", zpool+"/"+instanceid)
+	cmd := exec.Command("sudo", "zfs", "clone", "-o", "volmode=dev", zpool+"/"+ima+"@0", zpool+"/"+instanceid)
 	stdout, err := cmd.Output()
 	if err != nil {
 		panic(err)
