@@ -76,6 +76,8 @@ func bridgeCreate() {
 	lock.Lock()
 	cmd := exec.Command("sudo", "ifconfig", "bridge0", "create")
 	cmd.Output()
+	cmd = exec.Command("sudo", "ifconfig", "bridge0", "up")
+	cmd.Output()
 	lock.Unlock()
 }
 
@@ -88,7 +90,7 @@ func bridgeAddPub(publicinterface string) {
 
 func sysctlSet(sysctl string, value string) {
 	lock.Lock()
-	cmd := exec.Command("sudo", "sysctl", sysctl, value)
+	cmd := exec.Command("sudo", "/sbin/sysctl", sysctl + "=" + value)
 	cmd.Output()
 	lock.Unlock()
 }
@@ -376,10 +378,6 @@ func allocateTap() string {
 	return "tap" + strconv.Itoa(t)
 }
 
-func allocateNmdm(instanceid string) string {
-	return "nmdm-" + instanceid + "-"
-}
-
 func freeTap(tap string) {
 	// TODO check that name begins with "tap"
 	cmd := exec.Command("sudo", "ifconfig", tap, "destroy")
@@ -393,15 +391,6 @@ func findBridge() string {
 
 func saveTap(tap string, instanceid string) {
 	cmd := exec.Command("sudo", "zfs", "set", "pangolin:tap="+tap, zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		panic(err)
-	}
-	print(string(stdout))
-}
-
-func saveNmdm(nmdm string, instanceid string) {
-	cmd := exec.Command("sudo", "zfs", "set", "pangolin:nmdm="+nmdm, zpool+"/"+instanceid)
 	stdout, err := cmd.Output()
 	if err != nil {
 		panic(err)
@@ -438,19 +427,6 @@ func getTap(instanceid string) string {
 	}
 	tap := strings.Fields(string(stdout))[2]
 	return tap
-}
-
-func getNmdm(instanceid string) string {
-	cmd := exec.Command("zfs", "get", "-H", "-s", "local", "pangolin:nmdm", zpool+"/"+instanceid)
-	stdout, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-	if len(strings.Fields(string(stdout))) < 2 {
-		return ""
-	}
-	nmdm := strings.Fields(string(stdout))[2]
-	return nmdm
 }
 
 func getCpu(instanceid string) int {
@@ -518,8 +494,8 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 	switch os {
 	case "freebsd":
 		// clone ima to instance
-		u2 := allocateInstanceId()
-		cloneIma(ima.Ima, u2)
+		instanceid := allocateInstanceId()
+		cloneIma(ima.Ima, instanceid)
 
 		// create network interface and bring up
 		tap := allocateTap()
@@ -532,21 +508,17 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		bridgeUp(bridge)
 
 		// cleanup leftover instance if needed
-		bhyveDestroy(u2)
-		nmdm := allocateNmdm(u2)
-		if nmdm == "" {
-			return
-		}
-		saveTap(tap, u2)
-		saveNmdm(nmdm, u2)
-		saveCpu(ima.Cpu, u2)
-		saveMem(ima.Mem, u2)
-		go startFreeBSDVM("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
-		w.WriteJson(&u2)
+		bhyveDestroy(instanceid)
+		nmdm := "/dev/nmdm-" + instanceid + "-A"
+		saveTap(tap, instanceid)
+		saveCpu(ima.Cpu, instanceid)
+		saveMem(ima.Mem, instanceid)
+		go startFreeBSDVM(nmdm, ima.Cpu, ima.Mem, tap, instanceid)
+		w.WriteJson(&instanceid)
 	case "linux":
 		// clone ima to instance
-		u2 := allocateInstanceId()
-		cloneIma(ima.Ima, u2)
+		instanceid := allocateInstanceId()
+		cloneIma(ima.Ima, instanceid)
 
 		// create network interface and bring up
 		tap := allocateTap()
@@ -558,17 +530,13 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		addTapToBridge(tap, bridge)
 		bridgeUp(bridge)
 
-		nmdm := allocateNmdm(u2)
-		if nmdm == "" {
-			return
-		}
-		saveTap(tap, u2)
-		saveNmdm(nmdm, u2)
-		saveCpu(ima.Cpu, u2)
-		saveMem(ima.Mem, u2)
-		// bhyveLoad("/dev/"+nmdm+"A", ima.Mem, u2)
-		// execBhyve("/dev/"+nmdm+"A", ima.Cpu, ima.Mem, tap, u2)
-		w.WriteJson(&u2)
+		//nmdm := "/dev/nmdm-" + instanceid + "-A"
+		saveTap(tap, instanceid)
+		saveCpu(ima.Cpu, instanceid)
+		saveMem(ima.Mem, instanceid)
+		// bhyveLoad(nmdm, ima.Mem, instanceid)
+		// execBhyve(nmdm, ima.Cpu, ima.Mem, tap, instanceid)
+		w.WriteJson(&instanceid)
 	default:
 		rest.Error(w, "unknown OS", 400)
 	}
@@ -600,26 +568,26 @@ func killInstance(instance string) {
 }
 
 func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
-	instance := r.PathParam("instanceid")
+	instanceid := r.PathParam("instanceid")
 
 	re, _ := regexp.Compile(`^i-.*`)
-	if re.MatchString(instance) == false {
+	if re.MatchString(instanceid) == false {
 		return
 	}
 
-	_, err := getPid(instance)
+	_, err := getPid(instanceid)
 	if err == nil {
-		w.WriteJson(&instance)
+		w.WriteJson(&instanceid)
 		return
 	}
 
-	ima := getInstanceIma(instance)
+	ima := getInstanceIma(instanceid)
 	os := getImaOs(ima)
 
 	switch os {
 	case "freebsd":
 		// create network interface and bring up
-		tap := getTap(instance)
+		tap := getTap(instanceid)
 		if tap == "" {
 			return
 		}
@@ -629,14 +597,11 @@ func InstanceStart(w rest.ResponseWriter, r *rest.Request) {
 		bridgeUp(bridge)
 
 		// start the instance
-		nmdm := getNmdm(instance)
-		if nmdm == "" {
-			return
-		}
-		cpu := getCpu(instance)
-		mem := getMem(instance)
-		go startFreeBSDVM("/dev/"+nmdm+"A", cpu, mem, tap, instance)
-		w.WriteJson(&instance)
+		nmdm := "/dev/nmdm-" + instanceid + "-A"
+		cpu := getCpu(instanceid)
+		mem := getMem(instanceid)
+		go startFreeBSDVM(nmdm, cpu, mem, tap, instanceid)
+		w.WriteJson(&instanceid)
 	default:
 		rest.Error(w, "unknown OS", 400)
 	}
