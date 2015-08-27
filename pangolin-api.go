@@ -376,26 +376,8 @@ func allocateTap() string {
 	return "tap" + strconv.Itoa(t)
 }
 
-func allocateNmdm() string {
-	cmd := exec.Command("ls", "/dev/")
-	stdout, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	nmdm := 0
-	lines := strings.Split(string(stdout), "\n")
-	r, err := regexp.Compile("^nmdm" + strconv.Itoa(nmdm) + "A")
-
-	for _, line := range lines {
-		if r.MatchString(line) == true {
-			nmdm = nmdm + 1
-			r, err = regexp.Compile("^nmdm" + strconv.Itoa(nmdm) + "+A")
-		}
-	}
-
-	return "nmdm" + strconv.Itoa(nmdm)
-
+func allocateNmdm(instanceid string) string {
+	return "nmdm-" + instanceid + "-"
 }
 
 func freeTap(tap string) {
@@ -551,7 +533,7 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 
 		// cleanup leftover instance if needed
 		bhyveDestroy(u2)
-		nmdm := allocateNmdm()
+		nmdm := allocateNmdm(u2)
 		if nmdm == "" {
 			return
 		}
@@ -576,7 +558,7 @@ func InstanceCreate(w rest.ResponseWriter, r *rest.Request) {
 		addTapToBridge(tap, bridge)
 		bridgeUp(bridge)
 
-		nmdm := allocateNmdm()
+		nmdm := allocateNmdm(u2)
 		if nmdm == "" {
 			return
 		}
