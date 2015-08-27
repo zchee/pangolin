@@ -90,12 +90,12 @@ func bridgeAddPub(publicinterface string) {
 
 func sysctlSet(sysctl string, value string) {
 	lock.Lock()
-	cmd := exec.Command("sudo", "/sbin/sysctl", sysctl + "=" + value)
+	cmd := exec.Command("sudo", "/sbin/sysctl", sysctl+"="+value)
 	cmd.Output()
 	lock.Unlock()
 }
 
-func loadKmod (module string) {
+func loadKmod(module string) {
 	lock.Lock()
 	cmd := exec.Command("kldstat", "-m", module)
 	_, err := cmd.Output()
@@ -560,7 +560,7 @@ func killInstance(instance string) {
 		cmd.Output()
 	}
 
-        var pidstate error
+	var pidstate error
 	pidstate = nil
 	for pidstate == nil {
 		cmd := exec.Command("sudo", "kill", "-0", pid)
