@@ -109,7 +109,6 @@ func loadKmod(module string) {
 	cmd = exec.Command("sudo", "kldload", module)
 	_, err = cmd.Output()
 	lock.Unlock()
-
 }
 
 func main() {
