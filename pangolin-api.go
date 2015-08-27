@@ -21,13 +21,14 @@ var piddir string
 
 func init() {
 	var c int
+	var pubinterface string
 	// defaults
 	listen = ":8080"
 	piddir = "/var/run"
 
 	OptErr = 0
 	for {
-		if c = Getopt("z:l:p:h"); c == EOF {
+		if c = Getopt("z:l:p:i:h"); c == EOF {
 			break
 		}
 		switch c {
@@ -37,20 +38,79 @@ func init() {
 			listen = OptArg
 		case 'p':
 			piddir = OptArg
+		case 'i':
+			pubinterface = OptArg
 		case 'h':
-			println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-h]")
+			usage()
 			os.Exit(1)
 		}
 	}
 
+	if zpool == "" {
+		println("zpool required")
+		usage()
+		os.Exit(1)
+	}
+
+	if pubinterface == "" {
+		println("public interface required")
+		usage()
+		os.Exit(1)
+	}
+
+	loadKmod("vmm")
+	loadKmod("nmdm")
+	loadKmod("if_bridge")
+	loadKmod("if_tap")
+
+	sysctlSet("net.link.tap.up_on_open", "1")
+	bridgeCreate()
+	bridgeAddPub(pubinterface)
+}
+
+func usage() {
+	println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-i publicinterface|-h]")
+}
+
+func bridgeCreate() {
+	lock.Lock()
+	cmd := exec.Command("sudo", "ifconfig", "bridge0", "create")
+	cmd.Output()
+	lock.Unlock()
+}
+
+func bridgeAddPub(publicinterface string) {
+	lock.Lock()
+	cmd := exec.Command("sudo", "ifconfig", "bridge0", "addm", publicinterface)
+	cmd.Output()
+	lock.Unlock()
+}
+
+func sysctlSet(sysctl string, value string) {
+	lock.Lock()
+	cmd := exec.Command("sudo", "sysctl", sysctl, value)
+	cmd.Output()
+	lock.Unlock()
+}
+
+func loadKmod (module string) {
+	lock.Lock()
+	cmd := exec.Command("kldstat", "-m", module)
+	_, err := cmd.Output()
+	lock.Unlock()
+
+	if err == nil {
+		return
+	}
+
+	lock.Lock()
+	cmd = exec.Command("sudo", "kldload", module)
+	_, err = cmd.Output()
+	lock.Unlock()
+
 }
 
 func main() {
-	if zpool == "" {
-		println("zpool required")
-		println("usage: pangolin [-z zpool|-l listenaddress|-p piddir|-h]")
-		os.Exit(1)
-	}
 	api := rest.NewApi()
 	api.Use(rest.DefaultDevStack...)
 	router, err := rest.MakeRouter(
@@ -93,7 +153,6 @@ type Ima struct {
 var lock = sync.RWMutex{}
 
 func ImageList(w rest.ResponseWriter, r *rest.Request) {
-
 	lock.Lock()
 	cmd := exec.Command("zfs", "list", "-H", "-t", "volume")
 	stdout, err := cmd.Output()
@@ -258,7 +317,7 @@ func bridgeUp(bridge string) {
 
 func bhyveLoad(console string, memory int, instanceid string) {
 	cmd := exec.Command("sudo", "bhyveload", "-c", console, "-m", strconv.Itoa(memory)+"M", "-d", "/dev/zvol/"+zpool+"/"+instanceid, instanceid)
-	stdout, err := cmd.Output()
+	stdout, err := cmd.CombinedOutput()
 
 	if err != nil {
 		println(err.Error())
@@ -280,7 +339,7 @@ func bhyveDestroy(instanceid string) {
 func execBhyve(console string, cpus int, memory int, tap string, instanceid string) {
 	pidfile := piddir + "/pangolin." + instanceid + ".pid"
 	cmd := exec.Command("sudo", "daemon", "-c", "-f", "-p", pidfile, "bhyve", "-c", strconv.Itoa(cpus), "-m", strconv.Itoa(memory), "-H", "-A", "-P", "-s", "0:0,hostbridge", "-s", "1:0,lpc", "-s", "2:0,virtio-net,"+tap, "-s", "3:0,virtio-blk,/dev/zvol/"+zpool+"/"+instanceid, "-lcom1,"+console, instanceid)
-	stdout, err := cmd.Output()
+	stdout, err := cmd.CombinedOutput()
 
 	if err != nil {
 		println(err.Error())
