@@ -351,9 +351,6 @@ func execBhyve(console string, cpus int, memory int, tap string, instanceid stri
 }
 
 func allocateTap() string {
-	// TODO bring tap up? net.link.tap.up_on_open=1 should ensure it, but
-	// paranoia, perhaps should have setupTap check state of
-	// net.link.tap.up_on_open or do it at startup
 	lock.Lock()
 	cmd := exec.Command("ifconfig")
 	stdout, err := cmd.Output()
@@ -562,8 +559,19 @@ func killInstance(instance string) {
 		cmd := exec.Command("sudo", "kill", pid)
 		cmd.Output()
 	}
-	// TODO poll for process dying
-	time.Sleep(15000 * time.Millisecond)
+
+        var pidstate error
+	pidstate = nil
+	for pidstate == nil {
+		cmd := exec.Command("sudo", "kill", "-0", pid)
+		err := cmd.Start()
+		if err != nil {
+			log.Fatal(err)
+		}
+		pidstate = cmd.Wait()
+		time.Sleep(500 * time.Millisecond)
+	}
+
 	bhyveDestroy(instance)
 }
 
